@@ -5,7 +5,8 @@ import {
   FileCheck, 
   BookOpen, 
   FileEdit, 
-  FileText
+  FileText,
+  DollarSign
 } from 'lucide-react';
 
 const Sidebar = ({ width }) => {
@@ -22,6 +23,9 @@ const Sidebar = ({ width }) => {
         </Link>
         <Link to="/stand" className="flex items-center p-3 text-gray-700 hover:bg-gray-100">
           <FileCheck className="mr-3" /> 医疗术语标准化
+        </Link>
+        <Link to="/fin-std" className="flex items-center p-3 text-gray-700 hover:bg-gray-100">
+          <DollarSign className="mr-3" /> 金融术语标准化
         </Link>
         <Link to="/abbr" className="flex items-center p-3 text-gray-700 hover:bg-gray-100">
           <BookOpen className="mr-3" /> 医疗缩写展开

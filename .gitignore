@@ -106,3 +106,5 @@ dist/
 milvus_db/
 snomed_db/
 *CONCEPT*.csv
+
+venv/

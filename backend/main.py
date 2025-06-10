@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, ConfigDict
 from services.ner_service import NERService
 from services.std_service import StdService
+from services.fin_std_service import FinStdService
 from services.abbr_service import AbbrService
 from services.corr_service import CorrService
 from services.gen_service import GenService
@@ -28,6 +29,7 @@ app.add_middleware(
 # 初始化各个服务
 ner_service = NERService()  # 命名实体识别服务
 standardization_service = StdService()  # 术语标准化服务
+fin_standardization_service = FinStdService()  # 金融术语标准化服务
 abbr_service = AbbrService()  # 缩写扩展服务
 gen_service = GenService()  # 文本生成服务
 corr_service = CorrService()  # 拼写纠正服务
@@ -64,6 +66,25 @@ class EmbeddingOptions(BaseModel):
         description="集合名称"
     )
 
+class FinanceEmbeddingOptions(BaseModel):
+    """金融向量数据库配置选项"""
+    provider: Literal["huggingface", "openai", "bedrock"] = Field(
+        default="huggingface",
+        description="向量数据库提供商"
+    )
+    model: str = Field(
+        default="BAAI/bge-m3",
+        description="嵌入模型名称"
+    )
+    dbName: str = Field(
+        default="finance_bge_m3",
+        description="金融向量数据库名称"
+    )
+    collectionName: str = Field(
+        default="finance_terms",
+        description="金融术语集合名称"
+    )
+
 class TextInput(BaseInputModel):
     """文本输入模型，用于标准化和命名实体识别"""
     text: str = Field(..., description="输入文本")
@@ -78,6 +99,30 @@ class TextInput(BaseInputModel):
     embeddingOptions: EmbeddingOptions = Field(
         default_factory=EmbeddingOptions,
         description="向量数据库配置选项"
+    )
+
+class FinanceTextInput(BaseInputModel):
+    """金融文本输入模型，用于金融术语标准化"""
+    text: str = Field(..., description="输入金融文本")
+    termCategories: Dict[str, bool] = Field(
+        default_factory=lambda: {
+            "investment": True,
+            "banking": True,
+            "insurance": True,
+            "securities": True,
+            "accounting": True,
+            "economics": True,
+            "derivatives": True,
+            "real_estate": True,
+            "fintech": True,
+            "regulation": True,
+            "all_finance_terms": True
+        },
+        description="金融术语类别"
+    )
+    embeddingOptions: FinanceEmbeddingOptions = Field(
+        default_factory=FinanceEmbeddingOptions,
+        description="金融向量数据库配置选项"
     )
 
 class AbbrInput(BaseInputModel):
@@ -160,7 +205,7 @@ class GenInput(BaseInputModel):
         description="生成方法"
     )
 
-# API 端点：术语标准化
+# API 端点：术语标准化 # I have a very bad pain
 @app.post("/api/std")
 async def standardization(input: TextInput):
     try:
@@ -215,6 +260,50 @@ async def ner(input: TextInput):
         return results
     except Exception as e:
         logger.error(f"Error in NER processing: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# API 端点：金融术语标准化
+@app.post("/api/fin-std")
+async def finance_standardization(input: FinanceTextInput):
+    try:
+        # 记录请求信息
+        logger.info(f"Received finance standardization request: text={input.text}, termCategories={input.termCategories}, embeddingOptions={input.embeddingOptions}")
+
+        # 初始化金融标准化服务
+        finance_service = FinStdService(
+            provider=input.embeddingOptions.provider,
+            model=input.embeddingOptions.model,
+            db_path=f"db/{input.embeddingOptions.dbName}.db",
+            collection_name=input.embeddingOptions.collectionName
+        )
+
+        # 将输入文本按空格或标点符号分割，提取可能的金融术语
+        import re
+        # 简单的术语提取：按空格和标点分割，过滤掉太短的词
+        potential_terms = re.findall(r'\b[A-Za-z][A-Za-z\s\-\.]*\b', input.text)
+        potential_terms = [term.strip() for term in potential_terms if len(term.strip()) > 2]
+        
+        if not potential_terms:
+            # 如果没有提取到术语，就用整个文本进行搜索
+            potential_terms = [input.text]
+
+        # 标准化每个潜在的金融术语
+        standardized_results = []
+        for term in potential_terms:
+            std_result = finance_service.search_similar_terms(term)
+            if std_result:  # 只添加有结果的术语
+                standardized_results.append({
+                    "original_term": term,
+                    "standardized_results": std_result
+                })
+
+        return {
+            "message": f"处理了 {len(potential_terms)} 个潜在金融术语，找到 {len(standardized_results)} 个匹配结果",
+            "standardized_terms": standardized_results
+        }
+
+    except Exception as e:
+        logger.error(f"Error in finance standardization processing: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # API 端点：拼写纠正
